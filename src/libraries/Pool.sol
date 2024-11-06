@@ -78,7 +78,7 @@ library Pool {
 
     /// @dev The state of a pool
     struct State {
-        Slot0 slot0;
+        Slot0 slot0; // @pattern 32 bytes
         uint256 feeGrowthGlobal0X128;
         uint256 feeGrowthGlobal1X128;
         uint128 liquidity;
@@ -97,8 +97,10 @@ library Pool {
     function initialize(State storage self, uint160 sqrtPriceX96, uint24 lpFee) internal returns (int24 tick) {
         if (self.slot0.sqrtPriceX96() != 0) PoolAlreadyInitialized.selector.revertWith();
 
+        // @pattern convert sqrtPriceX96 to corresponding tick
         tick = TickMath.getTickAtSqrtPrice(sqrtPriceX96);
 
+        // @pattern initialize slot0
         // the initial protocolFee is 0 so doesn't need to be set
         self.slot0 = Slot0.wrap(bytes32(0)).setSqrtPriceX96(sqrtPriceX96).setTick(tick).setLpFee(lpFee);
     }

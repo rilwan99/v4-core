@@ -90,6 +90,7 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
 
     int24 private constant MIN_TICK_SPACING = TickMath.MIN_TICK_SPACING;
 
+    // @pattern mapping (32 bytes => State struct)
     mapping(PoolId id => Pool.State) internal _pools;
 
     /// @notice This will revert if the contract is locked
@@ -123,14 +124,20 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
                 Currency.unwrap(key.currency0), Currency.unwrap(key.currency1)
             );
         }
+
+        // @pattern valdates hook contract and checks for appropriate flag/ dynamic fee
         if (!key.hooks.isValidHookAddress(key.fee)) Hooks.HookAddressNotValid.selector.revertWith(address(key.hooks));
 
+        // @pattern return 0 for dynamic fee, otherwise validates fee and returns it
         uint24 lpFee = key.fee.getInitialLPFee();
 
+        // @pattern calls beforeInitialize hook
         key.hooks.beforeInitialize(key, sqrtPriceX96);
 
+        // @pattern hash the PoolKey struct to get the poolId, a unique ID
         PoolId id = key.toId();
 
+        // @pattern calls initialize function in Pool.sol to initialize the pool
         tick = _pools[id].initialize(sqrtPriceX96, lpFee);
 
         // event is emitted before the afterInitialize call to ensure events are always emitted in order
@@ -138,6 +145,7 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
         // the key's fee may be a static fee or a sentinel to denote a dynamic fee.
         emit Initialize(id, key.currency0, key.currency1, key.fee, key.tickSpacing, key.hooks, sqrtPriceX96, tick);
 
+        // @pattern calls the afterInitialize hook
         key.hooks.afterInitialize(key, sqrtPriceX96, tick);
     }
 
