@@ -81,9 +81,9 @@ library Pool {
         Slot0 slot0; // @pattern 32 bytes
         uint256 feeGrowthGlobal0X128;
         uint256 feeGrowthGlobal1X128;
-        uint128 liquidity;
-        mapping(int24 tick => TickInfo) ticks;
-        mapping(int16 wordPos => uint256) tickBitmap;
+        uint128 liquidity; // amount of liquidity in the pool
+        mapping(int24 tick => TickInfo) ticks; 
+        mapping(int16 wordPos => uint256) tickBitmap; // tick index
         mapping(bytes32 positionKey => Position.State) positions;
     }
 
@@ -149,20 +149,23 @@ library Pool {
         int128 liquidityDelta = params.liquidityDelta;
         int24 tickLower = params.tickLower;
         int24 tickUpper = params.tickUpper;
+        // @pattern validates min and max bounds, and ensures tickUpper >= tickLower
         checkTicks(tickLower, tickUpper);
 
         {
             ModifyLiquidityState memory state;
 
             // if we need to update the ticks, do it
+            // @pattern update lower and upper ticks
             if (liquidityDelta != 0) {
                 (state.flippedLower, state.liquidityGrossAfterLower) =
                     updateTick(self, tickLower, liquidityDelta, false);
                 (state.flippedUpper, state.liquidityGrossAfterUpper) = updateTick(self, tickUpper, liquidityDelta, true);
 
                 // `>` and `>=` are logically equivalent here but `>=` is cheaper
-                if (liquidityDelta >= 0) {
+                if (liquidityDelta >= 0) { // @pattern liquidity is added
                     uint128 maxLiquidityPerTick = tickSpacingToMaxLiquidityPerTick(params.tickSpacing);
+                    // @pattern validates the max bounds set per tick
                     if (state.liquidityGrossAfterLower > maxLiquidityPerTick) {
                         TickLiquidityOverflow.selector.revertWith(tickLower);
                     }
@@ -171,6 +174,7 @@ library Pool {
                     }
                 }
 
+                // @pattern update lower and upper ticks if they have been flipped
                 if (state.flippedLower) {
                     self.tickBitmap.flipTick(tickLower, params.tickSpacing);
                 }
@@ -179,10 +183,13 @@ library Pool {
                 }
             }
 
+            // @pattern calculates and returns feeDelta
             {
+                // @pattern calculate the total fees accumulated within the position's price range
                 (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) =
                     getFeeGrowthInside(self, tickLower, tickUpper);
 
+                // @pattern get the LP position and update the fees earn
                 Position.State storage position = self.positions.get(params.owner, tickLower, tickUpper, params.salt);
                 (uint256 feesOwed0, uint256 feesOwed1) =
                     position.update(liquidityDelta, feeGrowthInside0X128, feeGrowthInside1X128);
@@ -202,32 +209,44 @@ library Pool {
             }
         }
 
+        //-----------tickLower----------tickUpper---------
+        // @pattern calculates and returns delta for different scenarios
         if (liquidityDelta != 0) {
             Slot0 _slot0 = self.slot0;
             (int24 tick, uint160 sqrtPriceX96) = (_slot0.tick(), _slot0.sqrtPriceX96());
+            // @pattern  current price is below the price range that the liquidity provider has specified for their position
             if (tick < tickLower) {
                 // current tick is below the passed range; liquidity can only become in range by crossing from left to
                 // right, when we'll need _more_ currency0 (it's becoming more valuable) so user must provide it
                 delta = toBalanceDelta(
+                    // @pattern calculate amount0Delta between 2 prices
                     SqrtPriceMath.getAmount0Delta(
                         TickMath.getSqrtPriceAtTick(tickLower), TickMath.getSqrtPriceAtTick(tickUpper), liquidityDelta
-                    ).toInt128(),
-                    0
+                    ).toInt128(), // amount 0
+                    0 // amount 1 
                 );
-            } else if (tick < tickUpper) {
+            } 
+            
+            // @pattern depositing liquidity in current price range: tickerlower <= currentTick < tickUpper
+            else if (tick < tickUpper) { 
                 delta = toBalanceDelta(
+                    // @pattern  calculates how much of token0 is needed between the current price and the upper price bound
                     SqrtPriceMath.getAmount0Delta(sqrtPriceX96, TickMath.getSqrtPriceAtTick(tickUpper), liquidityDelta)
                         .toInt128(),
+                    // @pattern calculates how much of token1 is needed between the lower price bound and current price
                     SqrtPriceMath.getAmount1Delta(TickMath.getSqrtPriceAtTick(tickLower), sqrtPriceX96, liquidityDelta)
                         .toInt128()
                 );
-
+                // @pattern update total liquidity in the pool
                 self.liquidity = LiquidityMath.addDelta(self.liquidity, liquidityDelta);
-            } else {
+            } 
+            // @pattern currenTick >= tickUpper
+            else {
+
                 // current tick is above the passed range; liquidity can only become in range by crossing from right to
                 // left, when we'll need _more_ currency1 (it's becoming more valuable) so user must provide it
                 delta = toBalanceDelta(
-                    0,
+                    0, // amount0 is set to 0
                     SqrtPriceMath.getAmount1Delta(
                         TickMath.getSqrtPriceAtTick(tickLower), TickMath.getSqrtPriceAtTick(tickUpper), liquidityDelta
                     ).toInt128()
@@ -522,13 +541,17 @@ library Pool {
     {
         TickInfo storage info = self.ticks[tick];
 
+        // @pattern current liquidity values
         uint128 liquidityGrossBefore = info.liquidityGross;
         int128 liquidityNetBefore = info.liquidityNet;
 
+        // @pattern calculate new gross liquidity
         liquidityGrossAfter = LiquidityMath.addDelta(liquidityGrossBefore, liquidityDelta);
 
+        // @pattern check if tick transitions between initialized/uninitialized
         flipped = (liquidityGrossAfter == 0) != (liquidityGrossBefore == 0);
 
+        // @pattern if initializing for the first time
         if (liquidityGrossBefore == 0) {
             // by convention, we assume that all growth before a tick was initialized happened _below_ the tick
             if (tick <= self.slot0.tick()) {
@@ -539,10 +562,12 @@ library Pool {
 
         // when the lower (upper) tick is crossed left to right, liquidity must be added (removed)
         // when the lower (upper) tick is crossed right to left, liquidity must be removed (added)
+        // @pattern calculate new net liquidity
         int128 liquidityNet = upper ? liquidityNetBefore - liquidityDelta : liquidityNetBefore + liquidityDelta;
         assembly ("memory-safe") {
             // liquidityGrossAfter and liquidityNet are packed in the first slot of `info`
             // So we can store them with a single sstore by packing them ourselves first
+            // @pattern update state variables (tickInfo.liquidityGross and tickInfo.liquidityNet) in gas-efficient way
             sstore(
                 info.slot,
                 // bitwise OR to pack liquidityGrossAfter and liquidityNet

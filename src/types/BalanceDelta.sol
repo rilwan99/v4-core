@@ -11,6 +11,7 @@ using {add as +, sub as -, eq as ==, neq as !=} for BalanceDelta global;
 using BalanceDeltaLibrary for BalanceDelta global;
 using SafeCast for int256;
 
+// @pattern packs two int128 values into a single int256
 function toBalanceDelta(int128 _amount0, int128 _amount1) pure returns (BalanceDelta balanceDelta) {
     assembly ("memory-safe") {
         balanceDelta := or(shl(128, _amount0), and(sub(shl(128, 1), 1), _amount1))

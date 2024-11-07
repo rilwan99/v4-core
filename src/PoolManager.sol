@@ -157,8 +157,8 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
     ) external onlyWhenUnlocked noDelegateCall returns (BalanceDelta callerDelta, BalanceDelta feesAccrued) {
         PoolId id = key.toId();
         {
-            Pool.State storage pool = _getPool(id);
-            pool.checkPoolInitialized();
+            Pool.State storage pool = _getPool(id); // @pattern read state variable mapping
+            pool.checkPoolInitialized(); // @pattern checks slot0 of Pool.State struct
 
             key.hooks.beforeModifyLiquidity(key, params, hookData);
 
@@ -168,8 +168,8 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
                     owner: msg.sender,
                     tickLower: params.tickLower,
                     tickUpper: params.tickUpper,
-                    liquidityDelta: params.liquidityDelta.toInt128(),
-                    tickSpacing: key.tickSpacing,
+                    liquidityDelta: params.liquidiztyDelta.toInt128(), // @pattern convert int256 to int128
+                    tickSpacing: key.tickSpacing, // @pattern pool parameters
                     salt: params.salt
                 })
             );
@@ -187,6 +187,7 @@ contract PoolManager is IPoolManager, ProtocolFees, NoDelegateCall, ERC6909Claim
         // if the hook doesn't have the flag to be able to return deltas, hookDelta will always be 0
         if (hookDelta != BalanceDeltaLibrary.ZERO_DELTA) _accountPoolBalanceDelta(key, hookDelta, address(key.hooks));
 
+        // @pattern uniswap V4 flash accounting
         _accountPoolBalanceDelta(key, callerDelta, msg.sender);
     }
 
